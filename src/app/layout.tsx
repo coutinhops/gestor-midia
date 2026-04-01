@@ -1,23 +1,15 @@
-import type { Metadata } from 'next';
-import './globals.css';
+import type { Metadata } from 'next'
+import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Gestor de Mídia',
-  description: 'Gestor inteligente de vídeos e míusicas de Clubes e Eventos',
-};
+  title: 'Gestor de Mídia — Oralunic',
+  description: 'Gestor de Mídia da Rede Oralunic',
+}
 
-export default function RootLayout({
-  children,
-}: {children: React.ReactNode}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <!DOCTYPE html>
-    <html lang="pt">
-      <head>
-        <code>code-var()</code>
-      </head>
-      <body>
-        {cildren}
-      </body>
+    <html lang="pt-BR">
+      <body>{children}</body>
     </html>
-  );
+  )
 }
