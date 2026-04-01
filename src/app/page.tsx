@@ -1,8 +1,8 @@
-'use client';
-import { useRouter } from 'next/navigation';
-// Redirect to login / dashboard depending on auth status
-export default function Home() {
-  const router = useRouter();
-  router.push('/login');
-  return null;
+import { redirect } from 'next/navigation'
+import { getCurrentUser } from '@/lib/auth'
+
+export default async function RootPage() {
+  const user = await getCurrentUser()
+  if (user) redirect('/dashboard')
+  else redirect('/login')
 }
