@@ -1,14 +1,35 @@
-'use client';
+'use client'
 
-export default function PeriodFilter() {
+const PERIODS = [
+  { label: 'Hoje', value: 'today' },
+  { label: 'Ontem', value: 'yesterday' },
+  { label: '7 dias', value: 'last_7d' },
+  { label: '30 dias', value: 'last_30d' },
+  { label: 'Este mês', value: 'this_month' },
+  { label: 'Mês passado', value: 'last_month' },
+  { label: 'Personalizado', value: 'custom' },
+]
+
+interface PeriodFilterProps {
+  value: string
+  onChange: (v: string) => void
+}
+
+export default function PeriodFilter({ value, onChange }: PeriodFilterProps) {
   return (
-    <div className="flex gap-2">
-      <button className="px-4 py-2 bgf-blue-500 text-white rounded">
-        Today
-      </button>
-      <button className="px-4 py-2 bgf-gray-200 text-gray-700 rounded">
-        Last 30 Days
-      </button>
+    <div className="flex items-center gap-2 px-6 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
+      <span className="text-sm" style={{ color: 'var(--muted)' }}>Período</span>
+      <div className="flex gap-1 flex-wrap">
+        {PERIODS.map(p => (
+          <button
+            key={p.value}
+            onClick={() => onChange(p.value)}
+            className={`period-btn ${value === p.value ? 'active' : ''}`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
     </div>
-  );
+  )
 }
