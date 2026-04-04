@@ -153,10 +153,11 @@ export default function ComparativoPage() {
   const fmt  = formatCurrency
   const fmtN = (n: number) => formatNumber(n, 0)
 
-  const trendFormatter = (v: number) =>
-    trend === 'spend' || trend === 'cpl' || trend === 'cpm' ? fmt(v)
-    : trend === 'ctr' || trend === 'frequency' ? `${v.toFixed(2)}${trend === 'ctr' ? '%' : 'x'}`
-    : fmtN(v)
+  const trendFormatter = (v: number): string => {
+    if (trend === 'spend' || trend === 'cpl' || trend === 'cpm') return fmt(v)
+    if (trend === 'ctr' || trend === 'frequency') return `${v.toFixed(2)}${trend === 'ctr' ? '%' : 'x'}`
+    return fmtN(v)
+  }
 
   return (
     <div>
@@ -273,7 +274,7 @@ export default function ComparativoPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis dataKey="month" stroke="var(--muted)" tick={{ fontSize: 11 }} />
                     <YAxis stroke="var(--muted)" tick={{ fontSize: 11 }} />
-                    <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)", color: 'var(--text)', fontSize: 12 }}
+                    <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: 12 }}
                       formatter={(v: any) => [fmtN(v), 'Leads']} />
                     <Bar dataKey="leads" fill="#00c4a0" radius={[4,4,0,0]} />
                   </BarChart>
