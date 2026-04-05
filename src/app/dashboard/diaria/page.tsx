@@ -167,7 +167,7 @@ export default function DiariaPage() {
             {/* Summary KPIs */}
             <div className="metric-card">
               <p className="text-sm font-bold mb-3" style={{ color: 'var(--text)' }}>
-                Total do período — {METPCI_LABELS[metric]}
+                Total do período — {METRIC_LABELS[metric]}
               </p>
               <div className="flex flex-wrap gap-6">
                 {lines.map((line, i) => (
