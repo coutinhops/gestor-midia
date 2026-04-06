@@ -79,7 +79,7 @@ export default function DashboardPage() {
 
       setTotalAccounts(accountIds.length)
 
-      const fields = 'account_name,spend,impressions,clicks,reach,frequency,actions'
+      const fields = 'account_name,spend,impressions,clicks,reach,frequency,actions,action_values'
       let totalSpend = 0, totalImpressions = 0, totalClicks = 0, totalReach = 0, totalLeads = 0
       const accountResults: AccountRank[] = []
 
