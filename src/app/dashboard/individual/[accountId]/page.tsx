@@ -52,7 +52,7 @@ export default function IndividualPage({ params }: PageProps) {
     const metaId = matched?.id || accountId // fallback: param might already be an act_ ID
     if (matched?.name) setResolvedName(matched.name)
 
-    const base = `spend,impressions,clicks,reach,frequency,actions,cost_per_action_type`
+    const base = `spend,impressions,clicks,reach,frequency,actions,action_values,cost_per_action_type`
 
     try {
       const [acctRes, overviewRes, campaignRes, adsetRes, adRes] = await Promise.all([
