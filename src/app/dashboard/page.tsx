@@ -26,6 +26,15 @@ interface AccountRank {
   cpl: number
 }
 
+const PERIOD_LABEL: Record<string, string> = {
+  today: 'Hoje',
+  yesterday: 'Ontem',
+  last_7d: 'Últimos 7 dias',
+  last_30d: 'Últimos 30 dias',
+  this_month: 'Este mês',
+  last_month: 'Mês passado',
+}
+
 export default function DashboardPage() {
   const [period, setPeriod] = useState('last_7d')
   const [metrics, setMetrics] = useState<Metrics | null>(null)
@@ -33,7 +42,8 @@ export default function DashboardPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
-  const [autoRefresh, setAutoRefresh] = useState(false)
+  const [totalAccounts, setTotalAccounts] = useState(0)
+  const [accountsWithData, setAccountsWithData] = useState(0)
 
   useEffect(() => {
     fetch('/api/auth/me').then(r => r.json()).then(setUser)
@@ -54,14 +64,22 @@ export default function DashboardPage() {
         return
       }
 
-      const fields = 'account_name,spend,impressions,clicks,ctr,cpm,cpc,reach,frequency,actions,cost_per_action_type'
-      const accountIds = cfg.meta_account_ids || []
+      // Use cfg.accounts (seeded from META_ACCOUNT_NAMES — always all 75 units)
+      // Fall back to meta_account_ids if accounts list is empty
+      const cfgAccounts: Array<{ id: string; name: string }> = cfg.accounts || []
+      const accountIds: string[] = cfgAccounts.length > 0
+        ? cfgAccounts.map((a: { id: string }) => a.id)
+        : (cfg.meta_account_ids || [])
+
       if (accountIds.length === 0) {
-        setError('Nenhuma conta Meta selecionada em Configurações.')
+        setError('Nenhuma conta Meta encontrada. Verifique as Configurações.')
         setLoading(false)
         return
       }
 
+      setTotalAccounts(accountIds.length)
+
+      const fields = 'account_name,spend,impressions,clicks,reach,frequency,actions'
       let totalSpend = 0, totalImpressions = 0, totalClicks = 0, totalReach = 0, totalLeads = 0
       const accountResults: AccountRank[] = []
 
@@ -73,10 +91,12 @@ export default function DashboardPage() {
         )
       )
 
+      let withData = 0
       for (let i = 0; i < accountIds.length; i++) {
         const data = insightResults[i]
         const accountId = accountIds[i]
         if (data?.data?.[0]) {
+          withData++
           const d = data.data[0]
           const spend = parseFloat(d.spend || '0')
           const impressions = parseInt(d.impressions || '0')
@@ -90,9 +110,10 @@ export default function DashboardPage() {
           totalReach += reach
           totalLeads += leads
 
+          const knownName = cfgAccounts.find((a: { id: string }) => a.id === accountId)?.name
           accountResults.push({
             id: accountId,
-            name: d.account_name || accountId,
+            name: knownName || d.account_name || accountId,
             leads,
             spend,
             cpl: leads > 0 ? spend / leads : 0,
@@ -100,7 +121,8 @@ export default function DashboardPage() {
         }
       }
 
-      // Rank by leads descending, keep top 3
+      setAccountsWithData(withData)
+
       const top3 = accountResults.sort((a, b) => b.leads - a.leads).slice(0, 3)
       setTopAccounts(top3)
 
@@ -108,7 +130,7 @@ export default function DashboardPage() {
         spend: totalSpend,
         impressions: totalImpressions,
         clicks: totalClicks,
-        ctr: totalClicks > 0 ? (totalClicks / totalImpressions * 100) : 0,
+        ctr: totalImpressions > 0 ? (totalClicks / totalImpressions * 100) : 0,
         cpm: totalImpressions > 0 ? (totalSpend / totalImpressions * 1000) : 0,
         cpc: totalClicks > 0 ? (totalSpend / totalClicks) : 0,
         reach: totalReach,
@@ -127,21 +149,23 @@ export default function DashboardPage() {
   const fmtP = (n: number) => `${n.toFixed(2)}%`
 
   const medals = ['🥇', '🥈', '🥉']
+  const periodLabel = PERIOD_LABEL[period] || period
 
   return (
     <div>
-      {/* Header */}
       <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
-        <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Visão Geral</h1>
+        <div>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Visão Geral</h1>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+            Consolidado de todas as unidades · {periodLabel}
+          </p>
+        </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs" style={{ color: 'var(--muted)' }}>Últimos 7 dias</span>
-          <button
-            onClick={() => setAutoRefresh(!autoRefresh)}
-            className="text-xs px-3 py-1.5 rounded border"
-            style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
-          >
-            Auto-refresh: {autoRefresh ? 'on' : 'off'} ▼
-          </button>
+          {!loading && totalAccounts > 0 && (
+            <span className="text-xs px-2 py-1 rounded" style={{ background: 'var(--card)', color: accountsWithData === totalAccounts ? 'var(--teal)' : '#f59e0b', border: '1px solid var(--border)' }}>
+              {accountsWithData}/{totalAccounts} contas
+            </span>
+          )}
           {user && (
             <>
               <span className={user.role === 'admin' ? 'badge-admin' : 'badge-viewer'}>{user.role}</span>
@@ -157,13 +181,13 @@ export default function DashboardPage() {
         <div className="mb-6">
           <h2 className="text-lg font-bold mb-1" style={{ color: 'var(--text)' }}>Performance Consolidada</h2>
           <p className="text-sm" style={{ color: 'var(--muted)' }}>
-            Consolidado das contas gerenciadas lido diretamente da Meta API para {period === 'last_7d' ? 'últimos 7 dias' : 'o período selecionado'}.
+            Soma de todas as {totalAccounts > 0 ? totalAccounts : ''} unidades · dados diretos da Meta API · paridade com o Gerenciador de Anúncios.
           </p>
         </div>
 
         {loading && (
           <div className="error-card">
-            <p className="text-sm animate-pulse" style={{ color: 'var(--muted)' }}>Carregando dados...</p>
+            <p className="text-sm animate-pulse" style={{ color: 'var(--muted)' }}>Carregando dados de todas as unidades...</p>
           </div>
         )}
 
@@ -173,17 +197,16 @@ export default function DashboardPage() {
 
         {!loading && metrics && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <MetricCard label="Investimento" value={fmt(metrics.spend)} sub="Total consolidado" />
+            <MetricCard label="Investimento" value={fmt(metrics.spend)} sub={`${accountsWithData} unidades`} />
             <MetricCard label="Impressões" value={fmtN(metrics.impressions)} sub={`CPM ${fmt(metrics.cpm)}`} />
             <MetricCard label="Cliques" value={fmtN(metrics.clicks)} sub={`CTR ${fmtP(metrics.ctr)}`} />
             <MetricCard label="Alcance" value={fmtN(metrics.reach)} sub={`Freq. ${metrics.frequency.toFixed(2)}`} />
             <MetricCard label="CPC Médio" value={fmt(metrics.cpc)} />
             <MetricCard label="Leads" value={fmtN(metrics.leads)} />
-            <MetricCard label="CPL" value={fmt(metrics.cpl)} highlight />
+            <MetricCard label="CPL Médio" value={fmt(metrics.cpl)} highlight />
           </div>
         )}
 
-        {/* Top 3 Unidades */}
         {!loading && topAccounts.length > 0 && (
           <div className="mt-10">
             <h2 className="text-lg font-bold mb-1" style={{ color: 'var(--text)' }}>Top 3 Unidades</h2>
