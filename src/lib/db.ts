@@ -61,10 +61,42 @@ function seedAdmin(db: Database.Database) {
 
     db.prepare(`INSERT INTO users (id, email, name, password_hash, role) VALUES (?, ?, ?, ?, 'admin')`)
       .run(id, email, name, hash)
-
     db.prepare(`INSERT INTO user_configs (user_id) VALUES (?)`).run(id)
-
     console.log(`[DB] Admin user created: ${email}`)
+  }
+
+  // Seed Meta accounts from env var — instant, no network call on cold start
+  if (process.env.META_ACCOUNT_NAMES) {
+    try {
+      const metaAccounts: Array<{ id: string; name: string }> = JSON.parse(process.env.META_ACCOUNT_NAMES)
+      const existingCount = (db.prepare('SELECT COUNT(*) as c FROM accounts WHERE meta_account_id IS NOT NULL').get() as { c: number }).c
+      if (existingCount < metaAccounts.length) {
+        const upsert = db.prepare(`
+          INSERT INTO accounts (id, slug, name, meta_account_id, color)
+          VALUES (?, ?, ?, ?, '#00c4a0')
+          ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            meta_account_id = excluded.meta_account_id,
+            slug = excluded.slug
+        `)
+        const tx = db.transaction(() => {
+          for (const acc of metaAccounts) {
+            const base = acc.name
+              .toLowerCase()
+              .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-|-$/g, '') || 'acc'
+            const suffix = acc.id.replace('act_', '').slice(-8)
+            const slug = `${base}-${suffix}`
+            try { upsert.run(acc.id, slug, acc.name, acc.id) } catch {}
+          }
+        })
+        tx()
+        console.log(`[DB] Seeded ${metaAccounts.length} Meta accounts from env var`)
+      }
+    } catch (e) {
+      console.error('[DB] Failed to seed Meta accounts from env var:', e)
+    }
   }
 }
 
@@ -142,7 +174,6 @@ export const accountRepo = {
   findById(id: string): Account | null {
     return getDb().prepare('SELECT * FROM accounts WHERE id = ?').get(id) as Account || null
   },
-  // Sync real accounts from Meta API (upsert by Meta account ID)
   upsertFromMeta(metaAccounts: Array<{ id: string; name: string }>) {
     const upsert = getDb().prepare(`
       INSERT INTO accounts (id, slug, name, meta_account_id, color)
@@ -154,7 +185,6 @@ export const accountRepo = {
     `)
     const tx = getDb().transaction(() => {
       for (const acc of metaAccounts) {
-        // Generate slug: name-based + unique account ID suffix to avoid UNIQUE constraint conflicts
         const base = acc.name
           .toLowerCase()
           .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -162,9 +192,7 @@ export const accountRepo = {
           .replace(/^-|-$/g, '') || 'acc'
         const suffix = acc.id.replace('act_', '').slice(-8)
         const slug = `${base}-${suffix}`
-        try {
-          upsert.run(acc.id, slug, acc.name, acc.id)
-        } catch (e) {
+        try { upsert.run(acc.id, slug, acc.name, acc.id) } catch (e) {
           console.error('[upsertFromMeta] Failed for', acc.id, e)
         }
       }
