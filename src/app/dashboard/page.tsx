@@ -64,12 +64,26 @@ export default function DashboardPage() {
         return
       }
 
-      // Use cfg.accounts (seeded from META_ACCOUNT_NAMES — always all 75 units)
-      // Fall back to meta_account_ids if accounts list is empty
-      const cfgAccounts: Array<{ id: string; name: string }> = cfg.accounts || []
-      const accountIds: string[] = cfgAccounts.length > 0
-        ? cfgAccounts.map((a: { id: string }) => a.id)
-        : (cfg.meta_account_ids || [])
+      // Use cfg.accounts (seeded from META_ACCOUNT_NAMES env var).
+      // If that table is empty (env var not set), auto-discover all accounts
+      // directly from the Meta API so Visão Geral always covers 100% of accounts.
+      let cfgAccounts: Array<{ id: string; name: string }> = cfg.accounts || []
+      let accountIds: string[] = cfgAccounts.map((a: { id: string }) => a.id)
+
+      if (cfgAccounts.length === 0) {
+        try {
+          const adRes = await fetch('/api/meta/me/adaccounts?fields=id,name&limit=500')
+          const adData = await adRes.json()
+          if (adData?.data?.length > 0) {
+            cfgAccounts = adData.data.map((a: any) => ({ id: a.id, name: a.name }))
+            accountIds = cfgAccounts.map((a: { id: string }) => a.id)
+          } else {
+            accountIds = cfg.meta_account_ids || []
+          }
+        } catch {
+          accountIds = cfg.meta_account_ids || []
+        }
+      }
 
       if (accountIds.length === 0) {
         setError('Nenhuma conta Meta encontrada. Verifique as Configurações.')
