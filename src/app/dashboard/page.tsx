@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import ErrorCard from '@/components/ErrorCard'
 import MetricCard from '@/components/MetricCard'
 import PeriodFilter from '@/components/PeriodFilter'
-import { countLeads } from '@/lib/meta'
+import { countLeads, countLeadForms, countConversations } from '@/lib/meta'
 
 interface Metrics {
   spend: number
@@ -15,7 +15,11 @@ interface Metrics {
   reach: number
   frequency: number
   leads: number
+  leadForms: number
+  conversations: number
   cpl: number
+  cplForms: number
+  cplConversations: number
 }
 
 interface AccountRank {
@@ -64,26 +68,26 @@ export default function DashboardPage() {
         return
       }
 
-      // Use cfg.accounts (seeded from META_ACCOUNT_NAMES env var).
-      // If that table is empty (env var not set), auto-discover all accounts
-      // directly from the Meta API so Visão Geral always covers 100% of accounts.
-      let cfgAccounts: Array<{ id: string; name: string }> = cfg.accounts || []
-      let accountIds: string[] = cfgAccounts.map((a: { id: string }) => a.id)
+      // ── Merge ALL account sources for maximum coverage ─────────────────────
+      // Source priority: cfg.accounts (SQLite/env) → meta_account_ids → /me/adaccounts
+      const accountMap = new Map<string, string>()
+      // 1. Accounts from SQLite (seeded from META_ACCOUNT_NAMES env var)
+      ;(cfg.accounts || []).forEach((a: any) => accountMap.set(a.id, a.name || a.id))
+      // 2. IDs from META_ACCOUNT_IDS env var (may have accounts not in #1)
+      ;(cfg.meta_account_ids || []).forEach((id: string) => {
+        if (!accountMap.has(id)) accountMap.set(id, id)
+      })
+      // 3. Meta API auto-discovery — adds accounts the token can see directly
+      try {
+        const adData = await fetch('/api/meta/me/adaccounts?fields=id,name&limit=500').then(r => r.json())
+        ;(adData?.data || []).forEach((a: any) => {
+          if (!accountMap.has(a.id)) accountMap.set(a.id, a.name || a.id)
+          else if (accountMap.get(a.id) === a.id) accountMap.set(a.id, a.name || a.id)
+        })
+      } catch {}
 
-      if (cfgAccounts.length === 0) {
-        try {
-          const adRes = await fetch('/api/meta/me/adaccounts?fields=id,name&limit=500')
-          const adData = await adRes.json()
-          if (adData?.data?.length > 0) {
-            cfgAccounts = adData.data.map((a: any) => ({ id: a.id, name: a.name }))
-            accountIds = cfgAccounts.map((a: { id: string }) => a.id)
-          } else {
-            accountIds = cfg.meta_account_ids || []
-          }
-        } catch {
-          accountIds = cfg.meta_account_ids || []
-        }
-      }
+      const cfgAccounts = Array.from(accountMap.entries()).map(([id, name]) => ({ id, name }))
+      const accountIds = cfgAccounts.map(a => a.id)
 
       if (accountIds.length === 0) {
         setError('Nenhuma conta Meta encontrada. Verifique as Configurações.')
@@ -94,7 +98,8 @@ export default function DashboardPage() {
       setTotalAccounts(accountIds.length)
 
       const fields = 'account_name,spend,impressions,clicks,reach,frequency,actions,action_values'
-      let totalSpend = 0, totalImpressions = 0, totalClicks = 0, totalReach = 0, totalLeads = 0
+      let totalSpend = 0, totalImpressions = 0, totalClicks = 0, totalReach = 0
+      let totalLeadForms = 0, totalConversations = 0
       const accountResults: AccountRank[] = []
 
       const insightResults = await Promise.all(
@@ -116,14 +121,18 @@ export default function DashboardPage() {
           const impressions = parseInt(d.impressions || '0')
           const clicks = parseInt(d.clicks || '0')
           const reach = parseInt(d.reach || '0')
-          const leads = countLeads(d.actions || [])
+          const forms  = countLeadForms(d.actions || [])
+          const convos = countConversations(d.actions || [])
+          const leads  = countLeads(d.actions || [])
 
           totalSpend += spend
           totalImpressions += impressions
           totalClicks += clicks
           totalReach += reach
-          totalLeads += leads
+          totalLeadForms += forms
+          totalConversations += convos
 
+          // Use name from cfgAccounts if available (more reliable than account_name field)
           const knownName = cfgAccounts.find((a: { id: string }) => a.id === accountId)?.name
           accountResults.push({
             id: accountId,
@@ -140,6 +149,7 @@ export default function DashboardPage() {
       const top3 = accountResults.sort((a, b) => b.leads - a.leads).slice(0, 3)
       setTopAccounts(top3)
 
+      const totalLeads = totalLeadForms + totalConversations
       setMetrics({
         spend: totalSpend,
         impressions: totalImpressions,
@@ -150,7 +160,11 @@ export default function DashboardPage() {
         reach: totalReach,
         frequency: totalReach > 0 ? (totalImpressions / totalReach) : 0,
         leads: totalLeads,
+        leadForms: totalLeadForms,
+        conversations: totalConversations,
         cpl: totalLeads > 0 ? (totalSpend / totalLeads) : 0,
+        cplForms: totalLeadForms > 0 ? (totalSpend / totalLeadForms) : 0,
+        cplConversations: totalConversations > 0 ? (totalSpend / totalConversations) : 0,
       })
     } catch {
       setError('Erro ao carregar dados.')
@@ -216,8 +230,10 @@ export default function DashboardPage() {
             <MetricCard label="Cliques" value={fmtN(metrics.clicks)} sub={`CTR ${fmtP(metrics.ctr)}`} />
             <MetricCard label="Alcance" value={fmtN(metrics.reach)} sub={`Freq. ${metrics.frequency.toFixed(2)}`} />
             <MetricCard label="CPC Médio" value={fmt(metrics.cpc)} />
-            <MetricCard label="Leads" value={fmtN(metrics.leads)} />
-            <MetricCard label="CPL Médio" value={fmt(metrics.cpl)} highlight />
+            <MetricCard label="Cadastros" value={fmtN(metrics.leadForms)} sub="Formulários Lead Ads" />
+            <MetricCard label="Conversas" value={fmtN(metrics.conversations)} sub="WhatsApp / Messenger" />
+            <MetricCard label="CPL Cadastro" value={metrics.leadForms > 0 ? fmt(metrics.cplForms) : '—'} highlight />
+            <MetricCard label="CPL Conversa" value={metrics.conversations > 0 ? fmt(metrics.cplConversations) : '—'} highlight />
           </div>
         )}
 
