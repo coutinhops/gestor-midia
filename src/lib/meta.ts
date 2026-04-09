@@ -42,6 +42,26 @@ export function countLeads(actions: Array<{ action_type: string; value: string }
   return 0
 }
 
+// ─── Separate lead-type counters (faithful to Gerenciador "Resultados") ────────
+
+// Counts only Lead Ads form registrations (Cadastros / Lead Generation campaigns)
+export function countLeadForms(actions: Array<{ action_type: string; value: string }> = []): number {
+  const map: Record<string, number> = {}
+  for (const a of actions) map[a.action_type] = (map[a.action_type] || 0) + (Number(a.value) || 0)
+  return map['lead'] || 0
+}
+
+// Counts only messaging conversations (Click-to-WhatsApp / Messenger campaigns)
+// Uses messaging_conversation_started_7d as primary; messaging_first_reply as secondary.
+// Both appear in Gerenciador "Resultados" for Messages-objective campaigns.
+export function countConversations(actions: Array<{ action_type: string; value: string }> = []): number {
+  const map: Record<string, number> = {}
+  for (const a of actions) map[a.action_type] = (map[a.action_type] || 0) + (Number(a.value) || 0)
+  const started = map['onsite_conversion.messaging_conversation_started_7d'] || 0
+  const replied  = map['onsite_conversion.messaging_first_reply'] || 0
+  return started + replied
+}
+
 // ─── Metrics Calculator ───────────────────────────────────────────────────────
 export interface MetricsInput {
   spend: number
