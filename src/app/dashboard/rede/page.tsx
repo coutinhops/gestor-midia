@@ -4,7 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import PeriodFilter from '@/components/PeriodFilter'
 import ErrorCard from '@/components/ErrorCard'
 import {
-  countLeads, calcMetrics, BENCHMARKS,
+  countLeads, countLeadForms, countConversations, calcMetrics, BENCHMARKS,
   STATE_REGION, MACRO_REGIONS,
   formatCurrency, formatNumber, formatPercent,
 } from '@/lib/meta'
@@ -33,21 +33,18 @@ export default function RedePage() {
     const geoFields = 'spend,impressions,clicks,reach,actions'
 
     try {
-      // Get all accounts — prefer cfg.accounts (seeded from env var),
-      // fall back to auto-discovery via Meta API if table is empty.
-      let cfgAccounts: Array<{id: string; name: string}> = cfg.accounts || []
-      if (cfgAccounts.length === 0) {
-        try {
-          const adData = await fetch('/api/meta/me/adaccounts?fields=id,name&limit=500').then(r => r.json())
-          if (adData?.data?.length > 0) {
-            cfgAccounts = adData.data.map((a: any) => ({ id: a.id, name: a.name }))
-          } else {
-            cfgAccounts = (cfg.meta_account_ids || []).map((id: string) => ({ id, name: id }))
-          }
-        } catch {
-          cfgAccounts = (cfg.meta_account_ids || []).map((id: string) => ({ id, name: id }))
-        }
-      }
+      // Merge ALL account sources for maximum coverage
+      const accountMap = new Map<string, string>()
+      ;(cfg.accounts || []).forEach((a: any) => accountMap.set(a.id, a.name || a.id))
+      ;(cfg.meta_account_ids || []).forEach((id: string) => { if (!accountMap.has(id)) accountMap.set(id, id) })
+      try {
+        const adData = await fetch('/api/meta/me/adaccounts?fields=id,name&limit=500').then(r => r.json())
+        ;(adData?.data || []).forEach((a: any) => {
+          if (!accountMap.has(a.id)) accountMap.set(a.id, a.name || a.id)
+          else if (accountMap.get(a.id) === a.id) accountMap.set(a.id, a.name || a.id)
+        })
+      } catch {}
+      let cfgAccounts = Array.from(accountMap.entries()).map(([id, name]) => ({ id, name }))
 
       // Parallel fetch all accounts
       const fetches = cfgAccounts.map(async (acct: {id: string; name: string}) => {
@@ -62,8 +59,10 @@ export default function RedePage() {
         const reach       = parseInt(row.reach || '0')
         const frequency   = parseFloat(row.frequency || '0')
         const leads       = countLeads(row.actions || [])
+        const leadForms   = countLeadForms(row.actions || [])
+        const conversations = countConversations(row.actions || [])
         const m           = calcMetrics({ spend, impressions, clicks, reach, frequency, leads })
-        return { id, name: acct.name || id, ...m }
+        return { id, name: acct.name || id, ...m, leadForms, conversations }
       })
 
       const results = await Promise.all(fetches)
@@ -80,17 +79,21 @@ export default function RedePage() {
   // ── Aggregated network totals
   const totals = useMemo(() => {
     if (!rows.length) return null
-    const sum = (key: keyof typeof rows[0]) => rows.reduce((s, r) => s + (r[key] as number || 0), 0)
+    const sum = (key: string) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0)
     const totalSpend = sum('spend')
     const totalImpr  = sum('impressions')
     const totalClicks = sum('clicks')
     const totalLeads = sum('leads')
+    const totalLeadForms = sum('leadForms')
+    const totalConversations = sum('conversations')
     const totalReach = sum('reach')
     return {
       spend: totalSpend,
       impressions: totalImpr,
       clicks: totalClicks,
       leads: totalLeads,
+      leadForms: totalLeadForms,
+      conversations: totalConversations,
       reach: totalReach,
       ctr: totalImpr > 0 ? totalClicks / totalImpr * 100 : 0,
       cpl: totalLeads > 0 ? totalSpend / totalLeads : 0,
@@ -134,7 +137,8 @@ export default function RedePage() {
                   { label: 'Investimento total', value: fmt(totals.spend) },
                   { label: 'Impressões',          value: fmtN(totals.impressions) },
                   { label: 'Cliques',             value: fmtN(totals.clicks) },
-                  { label: 'Leads',               value: fmtN(totals.leads) },
+                  { label: 'Cadastros',           value: fmtN(totals.leadForms) },
+                  { label: 'Conversas',           value: fmtN(totals.conversations) },
                   {
                     label: 'CTR médio',
                     value: `${totals.ctr.toFixed(2)}%`,
@@ -191,7 +195,7 @@ export default function RedePage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                      {['Conta', 'Investimento', 'Share', 'Impressões', 'Cliques', 'CTR', 'CPC', 'Leads', 'CPL', 'Frequência'].map(h => (
+                      {['Conta', 'Investimento', 'Share', 'Impressões', 'Cliques', 'CTR', 'CPC', 'Cadastros', 'Conversas', 'CPL', 'Frequência'].map(h => (
                         <th key={h} className="text-left px-3 py-2 text-xs font-bold uppercase tracking-wider"
                           style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>{h}</th>
                       ))}
@@ -211,7 +215,8 @@ export default function RedePage() {
                           <td className="px-3 py-2.5" style={{ color: 'var(--text)' }}>{fmtN(r.clicks)}</td>
                           <td className="px-3 py-2.5" style={{ color: toneColor(r.ctr, NET_BENCHMARKS.ctr, true) }}>{r.ctr.toFixed(2)}%</td>
                           <td className="px-3 py-2.5" style={{ color: toneColor(r.cpc, NET_BENCHMARKS.cpc) }}>{fmt(r.cpc)}</td>
-                          <td className="px-3 py-2.5" style={{ color: 'var(--text)' }}>{fmtN(r.leads)}</td>
+                          <td className="px-3 py-2.5" style={{ color: 'var(--text)' }}>{fmtN(r.leadForms)}</td>
+                          <td className="px-3 py-2.5" style={{ color: 'var(--text)' }}>{fmtN(r.conversations)}</td>
                           <td className="px-3 py-2.5" style={{ color: toneColor(r.cpl, NET_BENCHMARKS.cpl) }}>{r.leads > 0 ? fmt(r.cpl) : '—'}</td>
                           <td className="px-3 py-2.5" style={{ color: r.frequency > NET_BENCHMARKS.freq ? '#ef4444' : 'var(--text)' }}>
                             {r.frequency.toFixed(2)}
